@@ -21,8 +21,8 @@ model = MyModel().to(device)
 
 # Read image
 image = load_image(...)
-x = image.unsqueeze(0).to(device)
-c, h, w = x.shape
+image = image.unsqueeze(0).to(device)
+_, c, h, w = x.shape
 
 # Create Fliser helper class
 fliser = Fliser(
@@ -33,12 +33,12 @@ fliser = Fliser(
     min_overlap=64,
 )
 
-# Do inference once per tile
 for tile in fliser.tiles():
+    # Do inference for single tile
     with torch.inference_mode():
-        x_tile = x[tile.slice()].unsqueeze(0)
-        pred = model(x_tile)[0]
+        pred = model(image[tile.slice()])
     
+    # Update Fliser state
     fliser.update(tile, pred)
 
 # Compute combined output

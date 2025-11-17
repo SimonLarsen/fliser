@@ -170,6 +170,15 @@ class Fliser:
         values
             Predicted values.
         """
+        if not len(values.shape) in (3, 4):
+            raise ValueError("values tensor should have shape ([B,] C, H, W).")
+
+        if len(values.shape) == 4:
+            if values.size(0) != 1:
+                raise ValueError("update() only supports batch size 1.")
+
+            values = cast(torch.FloatTensor, values.squeeze(0))
+
         values = cast(
             torch.FloatTensor,
             values.to(dtype=self._dtype, device=self._device),
