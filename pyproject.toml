@@ -1,0 +1,26 @@
+[project]
+name = "fliser"
+description = "Helper library for doing tiled inference with PyTorch."
+authors = [
+    {name = "Simon J. Larsen", email = "simonhffh@gmail.com"},
+]
+maintainers = [
+    {name = "Simon J. Larsen", email = "simonhffh@gmail.com"},
+]
+readme = {file = "README.md", content-type = "text/markdown"}
+license = "MIT"
+license-files = ["LICENSE"]
+dynamic = ["version"]
+requires-python = ">= 3.10"
+dependencies = ["torch>=2.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/SimonLarsen/fliser"
+Issues = "https://github.com/SimonLarsen/fliser/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "fliser.__version__"}
+
+[build-system]
+requires = ["setuptools >= 80.9.0"]
+build-backend = "setuptools.build_meta"
