@@ -1,6 +1,6 @@
-from typing import cast, Tuple, Sequence, Iterator
+from typing import cast, Tuple, Sequence, Iterator, Callable
 from types import EllipsisType
-from dataclasses import dataclass
+import operator
 import torch
 from fliser.dimensions import (
     find_optimal_tile_size,
@@ -9,17 +9,65 @@ from fliser.dimensions import (
 from fliser.masks import MaskType, get_mask
 
 
-@dataclass
 class Tile:
     size: Tuple[int, int]
     offset: Tuple[int, int]
 
+    def __init__(
+        self,
+        size: Tuple[int, int],
+        offset: Tuple[int, int],
+    ):
+        self.size = (int(size[0]), int(size[1]))
+        self.offset = (int(offset[0]), int(offset[1]))
+
     def slice(self) -> Tuple[EllipsisType, slice, slice]:
+        """
+        Get tensor slice for tile.
+
+        Assumes sliced tensor has shape [..., H, W].
+        """
         return (
             ...,
             slice(self.offset[0], self.offset[0] + self.size[0]),
             slice(self.offset[1], self.offset[1] + self.size[1]),
         )
+
+    def _apply_op(self, op: Callable, o: int) -> "Tile":
+        new_size = tuple(op(e, o) for e in self.size)
+        new_offset = tuple(op(e, o) for e in self.offset)
+        return Tile(new_size, new_offset)
+
+    def __floordiv__(self, o: int) -> "Tile":
+        """
+        Integer division.
+
+        Example
+        -------
+        ```python
+        tile = Tile((64, 64), (128, 256))
+        print(tile // 4)
+        # Tile(size=(16, 16), offset=(32, 64))
+        ```
+        """
+        return self._apply_op(operator.floordiv, o)
+
+    def __mul__(self, o: int) -> "Tile":
+        """
+        Multiplication.
+
+        Example
+        -------
+        ```python
+        tile = Tile((16, 16), (32, 64))
+        print(tile * 4)
+        # Tile(size=(64, 64), offset=(128, 256))
+        ```
+        """
+        return self._apply_op(operator.mul, o)
+
+    def __repr__(self) -> str:
+        return f"Tile(size={self.size}, offset={self.offset})"
 
 
 class TileIterator:
@@ -42,12 +90,12 @@ class TileIterator:
         return self
 
     def __next__(self) -> Tile:
-        if self._iy >= self._num_tiles[0]:
-            raise StopIteration
-
         image_height, image_width = self._image_size
         tile_height, tile_width = self._tile_size
         num_tiles_y, num_tiles_x = self._num_tiles
+
+        if self._iy == num_tiles_y:
+            raise StopIteration
 
         offset_y = 0
         if num_tiles_y > 1:
@@ -62,7 +110,7 @@ class TileIterator:
             )
 
         self._ix += 1
-        if self._ix == self._num_tiles[1]:
+        if self._ix == num_tiles_x:
             self._ix = 0
             self._iy += 1
 
