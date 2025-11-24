@@ -1,6 +1,7 @@
-from typing import cast, Tuple
+from typing import cast
 from enum import Enum
 import torch
+from fliser.dimensions import Size2
 
 
 class MaskType(str, Enum):
@@ -21,7 +22,7 @@ class MaskType(str, Enum):
 
 def get_mask(
     mask_type: MaskType,
-    tile_size: Tuple[int, int],
+    tile_size: Size2,
     overlap: int,
     **kwargs,
 ) -> torch.FloatTensor:
@@ -44,7 +45,7 @@ def get_mask(
     raise ValueError(f"Unknown mask type {mask_type}")
 
 
-def linear_mask(tile_size: Tuple[int, int], overlap: int) -> torch.FloatTensor:
+def linear_mask(tile_size: Size2, overlap: int) -> torch.FloatTensor:
     """
     Get linear blending mask.
 
@@ -69,7 +70,7 @@ def linear_mask(tile_size: Tuple[int, int], overlap: int) -> torch.FloatTensor:
     return cast(torch.FloatTensor, mask)
 
 
-def sine_mask(tile_size: Tuple[int, int], overlap: int) -> torch.FloatTensor:
+def sine_mask(tile_size: Size2, overlap: int) -> torch.FloatTensor:
     """
     Get sinusoid blending mask.
 

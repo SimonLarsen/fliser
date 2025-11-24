@@ -3,21 +3,19 @@ from types import EllipsisType
 import operator
 import torch
 from fliser.dimensions import (
-    find_optimal_tile_size,
+    Size2,
     compute_tile_count,
+    find_optimal_tile_size,
+    find_optimal_aspect_ratio,
 )
 from fliser.masks import MaskType, get_mask
 
 
 class Tile:
-    size: Tuple[int, int]
-    offset: Tuple[int, int]
+    size: Size2
+    offset: Size2
 
-    def __init__(
-        self,
-        size: Tuple[int, int],
-        offset: Tuple[int, int],
-    ):
+    def __init__(self, size: Size2, offset: Size2):
         self.size = (int(size[0]), int(size[1]))
         self.offset = (int(offset[0]), int(offset[1]))
 
@@ -26,6 +24,16 @@ class Tile:
         Get tensor slice for tile.
 
         Assumes sliced tensor has shape [..., H, W].
+
+        Examples
+        --------
+        ```python
+        x = torch.rand(2, 3, 768, 1024)
+        tile = Tile((128, 128), (32, 64))
+        y = x[tile.slice()]
+        print(y.shape)
+        # torch.size([2, 3, 128, 128])
+        ```
         """
         return (
             ...,
@@ -40,7 +48,7 @@ class Tile:
 
     def __floordiv__(self, o: int) -> "Tile":
         """
-        Integer division.
+        Divide by integer (truncated).
 
         Example
         -------
@@ -54,7 +62,7 @@ class Tile:
 
     def __mul__(self, o: int) -> "Tile":
         """
-        Multiplication.
+        Multiply by integer.
 
         Example
         -------
@@ -71,15 +79,15 @@ class Tile:
 
 
 class TileIterator:
-    _image_size: Tuple[int, int]
-    _tile_size: Tuple[int, int]
-    _num_tiles: Tuple[int, int]
+    _image_size: Size2
+    _tile_size: Size2
+    _num_tiles: Size2
 
     def __init__(
         self,
-        image_size: Tuple[int, int],
-        tile_size: Tuple[int, int],
-        num_tiles: Tuple[int, int],
+        image_size: Size2,
+        tile_size: Size2,
+        num_tiles: Size2,
     ):
         self._image_size = image_size
         self._tile_size = tile_size
@@ -120,9 +128,9 @@ class TileIterator:
 class Fliser:
     """Fliser tiled inference helper."""
 
-    _image_size: Tuple[int, int]
-    _tile_size: Tuple[int, int]
-    _num_tiles: Tuple[int, int]
+    _image_size: Size2
+    _tile_size: Size2
+    _num_tiles: Size2
 
     _device: torch.device
     _dtype: torch.dtype
@@ -132,18 +140,16 @@ class Fliser:
 
     def __init__(
         self,
-        image_size: Tuple[int, int],
+        image_size: Size2,
         num_channels: int,
-        tile_num_pixels: int,
-        aspect_ratios: Sequence[float],
+        tile_size: Size2,
         min_overlap: int = 64,
-        divisor: int = 8,
         mask_type: MaskType = MaskType.LINEAR,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float32,
     ):
         """
-        Create Fliser.
+        Create Fliser helper.
 
         Parameters
         ----------
@@ -151,14 +157,10 @@ class Fliser:
             Full inference image size (height, width).
         num_channels
             Number of channels in output image.
-        tile_num_pixels
-            Approximate number of pixels per tile (height * width).
-        aspect_ratios
-            Candidate aspect ratios (width / height).
+        tile_size
+            Tile size (height, width).
         min_overlap
             Minimum tile overlap in pixels.
-        divisor
-            Make tile dimensions divisible by this number.
         mask_type
             Mask blending type.
         device
@@ -166,22 +168,17 @@ class Fliser:
         dtype
             Torch dtype to store buffers in.
         """
+
         self._image_size = (image_size[0], image_size[1])
         self._num_channels = num_channels
+        self._tile_size = (tile_size[0], tile_size[1])
         self._min_overlap = min_overlap
         self._mask_type = mask_type
         self._device = device
         self._dtype = dtype
 
-        self._tile_size = find_optimal_tile_size(
-            image_size=self._image_size,
-            tile_num_pixels=tile_num_pixels,
-            aspect_ratios=aspect_ratios,
-            min_overlap=min_overlap,
-            divisor=divisor,
-        )
         self._num_tiles = compute_tile_count(
-            self._image_size, self._tile_size, min_overlap
+            self._image_size, self._tile_size, self._min_overlap
         )
 
         self._value_buffer = cast(
@@ -201,6 +198,110 @@ class Fliser:
             )
         )
         self.reset()
+
+    @classmethod
+    def from_aspect_ratios(
+        cls,
+        image_size: Size2,
+        num_channels: int,
+        tile_num_pixels: int,
+        aspect_ratios: Sequence[float],
+        min_overlap: int = 64,
+        divisor: int = 8,
+        mask_type: MaskType = MaskType.LINEAR,
+        device: torch.device = torch.device("cpu"),
+        dtype: torch.dtype = torch.float32,
+    ) -> "Fliser":
+        """
+        Create Fliser helper from at set of candidate aspect ratios.
+
+        Parameters
+        ----------
+        image_size
+            Full inference image size (height, width).
+        num_channels
+            Number of channels in output image.
+        tile_num_pixels
+            Approximate number of pixels per tile (height * width).
+        aspect_ratios
+            Candidate aspect ratios (width / height) to evaluate.
+        min_overlap
+            Minimum tile overlap in pixels.
+        divisor
+            Make tile dimensions divisible by this number.
+        mask_type
+            Mask blending type.
+        device
+            Torch device to store buffers on.
+        dtype
+            Torch dtype to store buffers in.
+        """
+
+        tile_size = find_optimal_aspect_ratio(
+            image_size=image_size,
+            tile_num_pixels=tile_num_pixels,
+            aspect_ratios=aspect_ratios,
+            min_overlap=min_overlap,
+            divisor=divisor,
+        )
+
+        return Fliser(
+            image_size=image_size,
+            num_channels=num_channels,
+            tile_size=tile_size,
+            min_overlap=min_overlap,
+            mask_type=mask_type,
+            device=device,
+            dtype=dtype,
+        )
+
+    @classmethod
+    def from_sizes(
+        cls,
+        image_size: Size2,
+        num_channels: int,
+        tile_sizes: Sequence[Size2],
+        min_overlap: int = 64,
+        mask_type: MaskType = MaskType.LINEAR,
+        device: torch.device = torch.device("cpu"),
+        dtype: torch.dtype = torch.float32,
+    ) -> "Fliser":
+        """
+        Create Fliser helper from at set of candidate aspect ratios.
+
+        Parameters
+        ----------
+        image_size
+            Full inference image size (height, width).
+        num_channels
+            Number of channels in output image.
+        tile_sizes
+            Candidate tile sizes (width / height) to evaluate.
+        min_overlap
+            Minimum tile overlap in pixels.
+        mask_type
+            Mask blending type.
+        device
+            Torch device to store buffers on.
+        dtype
+            Torch dtype to store buffers in.
+        """
+
+        tile_size = find_optimal_tile_size(
+            image_size=image_size,
+            tile_sizes=tile_sizes,
+            min_overlap=min_overlap,
+        )
+
+        return Fliser(
+            image_size=image_size,
+            num_channels=num_channels,
+            tile_size=tile_size,
+            min_overlap=min_overlap,
+            mask_type=mask_type,
+            device=device,
+            dtype=dtype,
+        )
 
     def reset(self) -> None:
         """Reset internal buffers."""
@@ -254,7 +355,14 @@ class Fliser:
         return cast(torch.FloatTensor, output)
 
     def tiles(self) -> Iterator[Tile]:
-        """Get iterator for image tiles."""
+        """
+        Get iterator for image tiles.
+
+        Returns
+        -------
+        Iterator[Tile]
+            Iterator over all tiles in the image.
+        """
         return TileIterator(
             image_size=self._image_size,
             tile_size=self._tile_size,

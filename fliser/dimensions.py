@@ -1,12 +1,16 @@
-from typing import Optional, Sequence, Tuple
+from typing import TypeAlias, Optional, Sequence, Tuple
 import math
 
 
+Size2: TypeAlias = Tuple[int, int]
+"""2D size tuple."""
+
+
 def compute_tile_count(
-    image_size: Tuple[int, int],
-    tile_size: Tuple[int, int],
+    image_size: Size2,
+    tile_size: Size2,
     min_overlap: int,
-) -> Tuple[int, int]:
+) -> Size2:
     """
     Compute number of tiles for a given tile and overlap.
 
@@ -37,7 +41,7 @@ def tile_size_from_aspect(
     num_pixels: int,
     aspect_ratio: float,
     divisor: Optional[int] = 8,
-) -> Tuple[int, int]:
+) -> Size2:
     """
     Compute tile dimensions given aspect ratio.
 
@@ -60,38 +64,33 @@ def tile_size_from_aspect(
 
 
 def find_optimal_tile_size(
-    image_size: Tuple[int, int],
-    tile_num_pixels: int,
-    aspect_ratios: Sequence[float] = (1.0,),
+    image_size: Size2,
+    tile_sizes: Sequence[Size2],
     min_overlap: int = 32,
-    divisor: Optional[int] = 8,
-) -> Tuple[int, int]:
+) -> Size2:
     """
-    Find optimal tile size from a set of candidate aspect ratios.
+    Find optimal tile size from a set of candidate sizes.
 
+    Parameters
+    ----------
     image_size
         Image size (height, width).
-    tile_num_pixels
-        Approximate number of pixels in tile (height * width).
-    aspect_ratios
-        Candidate aspect ratios.
+    tile_sizes
+        Candidate tile sizes (height, width) to evaluate.
     min_overlap
-        Minimum tile overlap in pixels.
-    divisor
-        Make dimensions divisible by this number.
+        Minimum required tile overlap in pixels.
     """
-    if divisor is None:
-        divisor = 1
 
     best_tile_count = None
-    best_ratio = 1.0
+    best_tile_size = tile_sizes[0]
+    best_ratio = best_tile_size[1] / best_tile_size[0]
 
-    for ratio in aspect_ratios:
-        tile_size = tile_size_from_aspect(tile_num_pixels, ratio, divisor)
+    for tile_size in tile_sizes:
         tile_size = (
             min(tile_size[0], image_size[0]),
             min(tile_size[1], image_size[1]),
         )
+        ratio = tile_size[1] / tile_size[0]
 
         num_tiles_y, num_tiles_x = compute_tile_count(
             image_size, tile_size, min_overlap
@@ -103,10 +102,50 @@ def find_optimal_tile_size(
             tile_count < best_tile_count or
             (
                 tile_count == best_tile_count and
-                abs(ratio - 1.0) < abs(best_ratio - 1.0)
+                abs(best_ratio - 1.0) < abs(ratio - 1.0)
             )
         ):
             best_tile_count = tile_count
-            best_ratio = ratio
+            best_tile_size = tile_size
+            best_ratio = tile_size[1] / tile_size[0]
 
-    return tile_size_from_aspect(tile_num_pixels, best_ratio, divisor)
+    return best_tile_size
+
+
+def find_optimal_aspect_ratio(
+    image_size: Size2,
+    tile_num_pixels: int,
+    aspect_ratios: Sequence[float] = (1.0,),
+    min_overlap: int = 32,
+    divisor: Optional[int] = 8,
+) -> Size2:
+    """
+    Find optimal tile size from a set of candidate aspect ratios.
+
+    Parameters
+    ----------
+    image_size
+        Image size (height, width).
+    tile_num_pixels
+        Approximate number of pixels in tile (height * width).
+    aspect_ratios
+        Candidate aspect ratios (width / height) to evaluate.
+    min_overlap
+        Minimum required tile overlap in pixels.
+    divisor
+        Make dimensions divisible by this number.
+    """
+
+    if divisor is None:
+        divisor = 1
+
+    tile_sizes = []
+    for ratio in aspect_ratios:
+        tile_size = tile_size_from_aspect(tile_num_pixels, ratio, divisor)
+        tile_sizes.append(tile_size)
+
+    return find_optimal_tile_size(
+        image_size=image_size,
+        tile_sizes=tile_sizes,
+        min_overlap=min_overlap,
+    )

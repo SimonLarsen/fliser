@@ -12,7 +12,10 @@ license = "MIT"
 license-files = ["LICENSE"]
 dynamic = ["version"]
 requires-python = ">= 3.10"
-dependencies = ["torch>=2.0.0"]
+dependencies = [
+    "numpy>=2.2.6",
+    "torch>=2.0.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/SimonLarsen/fliser"
@@ -24,3 +27,7 @@ version = {attr = "fliser.__version__"}
 [build-system]
 requires = ["setuptools >= 80.9.0"]
 build-backend = "setuptools.build_meta"
+
+[[tool.mypy.overrides]]
+module = ["torch.*"]
+ignore_missing_imports = true
