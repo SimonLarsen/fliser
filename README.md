@@ -6,7 +6,7 @@ Helper library for doing tiled inference with PyTorch.
 ## Installation
 
 ```
-pip install git+https://github.com/SimonLarsen/fliser.git
+pip install fliser
 ```
 
 ## Examples
