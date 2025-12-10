@@ -97,6 +97,9 @@ class TileIterator:
     def __iter__(self) -> "TileIterator":
         return self
 
+    def __len__(self) -> int:
+        return self._num_tiles[0] * self._num_tiles[1]
+
     def __next__(self) -> Tile:
         image_height, image_width = self._image_size
         tile_height, tile_width = self._tile_size
