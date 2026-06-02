@@ -1,8 +1,9 @@
-from typing import TypeAlias, Optional, Sequence, Tuple
+from typing import TypeAlias
+from collections.abc import Sequence
 import math
 
 
-Size2: TypeAlias = Tuple[int, int]
+Size2: TypeAlias = tuple[int, int]
 """2D size tuple."""
 
 
@@ -40,7 +41,7 @@ def compute_tile_count(
 def tile_size_from_aspect(
     num_pixels: int,
     aspect_ratio: float,
-    divisor: Optional[int] = 8,
+    divisor: int | None = 8,
 ) -> Size2:
     """
     Compute tile dimensions given aspect ratio.
@@ -117,7 +118,7 @@ def find_optimal_aspect_ratio(
     tile_num_pixels: int,
     aspect_ratios: Sequence[float] = (1.0,),
     min_overlap: int = 32,
-    divisor: Optional[int] = 8,
+    divisor: int | None = 8,
 ) -> Size2:
     """
     Find optimal tile size from a set of candidate aspect ratios.
@@ -139,7 +140,7 @@ def find_optimal_aspect_ratio(
     if divisor is None:
         divisor = 1
 
-    tile_sizes = []
+    tile_sizes: list[Size2] = []
     for ratio in aspect_ratios:
         tile_size = tile_size_from_aspect(tile_num_pixels, ratio, divisor)
         tile_sizes.append(tile_size)

@@ -31,3 +31,6 @@ build-backend = "setuptools.build_meta"
 [[tool.mypy.overrides]]
 module = ["torch.*"]
 ignore_missing_imports = true
+
+[basedpyright]
+typeCheckingMode = "standard"

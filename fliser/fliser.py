@@ -1,4 +1,5 @@
-from typing import cast, Tuple, Sequence, Iterator, Callable
+from typing import cast, Tuple, Callable
+from collections.abc import Sequence, Iterator
 from types import EllipsisType
 import operator
 import torch
