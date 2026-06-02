@@ -1,6 +1,7 @@
-from typing import cast, Tuple, Callable
+from typing import cast, Callable
 from collections.abc import Sequence, Iterator
 from types import EllipsisType
+from enum import Enum
 import operator
 import torch
 from fliser.dimensions import (
@@ -12,6 +13,25 @@ from fliser.dimensions import (
 from fliser.masks import MaskType, get_mask
 
 
+class BlendMode(str, Enum):
+    """
+    Tile blending mode type.
+
+    Attributes
+    ----------
+    MASK
+        Blend using mask.
+    MAX
+        Keep maximum value.
+    MIN
+        Keep minimum value.
+    """
+
+    MASK = "mask"
+    MAX = "max"
+    MIN = "min"
+
+
 class Tile:
     size: Size2
     offset: Size2
@@ -20,7 +40,7 @@ class Tile:
         self.size = (int(size[0]), int(size[1]))
         self.offset = (int(offset[0]), int(offset[1]))
 
-    def slice(self) -> Tuple[EllipsisType, slice, slice]:
+    def slice(self) -> tuple[EllipsisType, slice, slice]:
         """
         Get tensor slice for tile.
 
@@ -42,9 +62,9 @@ class Tile:
             slice(self.offset[1], self.offset[1] + self.size[1]),
         )
 
-    def _apply_op(self, op: Callable, o: int) -> "Tile":
-        new_size = tuple(op(e, o) for e in self.size)
-        new_offset = tuple(op(e, o) for e in self.offset)
+    def _apply_op(self, op: Callable[[int, int], int], o: int) -> "Tile":
+        new_size = (op(self.size[0], o), op(self.size[1], o))
+        new_offset = (op(self.offset[0], o), op(self.offset[1], o))
         return Tile(new_size, new_offset)
 
     def __floordiv__(self, o: int) -> "Tile":
@@ -93,7 +113,8 @@ class TileIterator:
         self._image_size = image_size
         self._tile_size = tile_size
         self._num_tiles = num_tiles
-        self._iy, self._ix = 0, 0
+        self._iy: int = 0
+        self._ix: int = 0
 
     def __iter__(self) -> "TileIterator":
         return self
@@ -148,8 +169,9 @@ class Fliser:
         num_channels: int,
         tile_size: Size2,
         min_overlap: int = 64,
+        blend_mode: BlendMode = BlendMode.MASK,
         mask_type: MaskType = MaskType.LINEAR,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device | str = "cpu",
         dtype: torch.dtype = torch.float32,
     ):
         """
@@ -165,6 +187,8 @@ class Fliser:
             Tile size (height, width).
         min_overlap
             Minimum tile overlap in pixels.
+        blend_mode
+            Tile blending model.
         mask_type
             Mask blending type.
         device
@@ -177,8 +201,9 @@ class Fliser:
         self._num_channels = num_channels
         self._tile_size = (tile_size[0], tile_size[1])
         self._min_overlap = min_overlap
+        self._blend_mode = blend_mode
         self._mask_type = mask_type
-        self._device = device
+        self._device = torch.device(device)
         self._dtype = dtype
 
         self._num_tiles = compute_tile_count(
@@ -212,6 +237,7 @@ class Fliser:
         aspect_ratios: Sequence[float],
         min_overlap: int = 64,
         divisor: int = 8,
+        blend_mode: BlendMode = BlendMode.MASK,
         mask_type: MaskType = MaskType.LINEAR,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float32,
@@ -233,6 +259,8 @@ class Fliser:
             Minimum tile overlap in pixels.
         divisor
             Make tile dimensions divisible by this number.
+        blend_mode
+            Tile blending model.
         mask_type
             Mask blending type.
         device
@@ -254,6 +282,7 @@ class Fliser:
             num_channels=num_channels,
             tile_size=tile_size,
             min_overlap=min_overlap,
+            blend_mode=blend_mode,
             mask_type=mask_type,
             device=device,
             dtype=dtype,
@@ -266,6 +295,7 @@ class Fliser:
         num_channels: int,
         tile_sizes: Sequence[Size2],
         min_overlap: int = 64,
+        blend_mode: BlendMode = BlendMode.MASK,
         mask_type: MaskType = MaskType.LINEAR,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float32,
@@ -283,6 +313,8 @@ class Fliser:
             Candidate tile sizes (width / height) to evaluate.
         min_overlap
             Minimum tile overlap in pixels.
+        blend_mode
+            Tile blending model.
         mask_type
             Mask blending type.
         device
@@ -302,6 +334,7 @@ class Fliser:
             num_channels=num_channels,
             tile_size=tile_size,
             min_overlap=min_overlap,
+            blend_mode=blend_mode,
             mask_type=mask_type,
             device=device,
             dtype=dtype,
@@ -309,8 +342,8 @@ class Fliser:
 
     def reset(self) -> None:
         """Reset internal buffers."""
-        self._value_buffer.zero_()
-        self._weight_buffer.zero_()
+        _ = self._value_buffer.zero_()
+        _ = self._weight_buffer.zero_()
 
     def update(self, tile: Tile, values: torch.FloatTensor) -> None:
         """
@@ -337,12 +370,6 @@ class Fliser:
             values.to(dtype=self._dtype, device=self._device),
         )
 
-        mask = get_mask(self._mask_type, tile.size, self._min_overlap)
-        mask = cast(
-            torch.FloatTensor,
-            mask.to(dtype=self._dtype, device=self._device),
-        )
-
         tile_height, tile_width = tile.size
         offset_y, offset_x = tile.offset
         tile_slice = (
@@ -350,8 +377,27 @@ class Fliser:
             slice(offset_y, offset_y + tile_height),
             slice(offset_x, offset_x + tile_width),
         )
-        self._value_buffer[tile_slice] += values * mask
-        self._weight_buffer[tile_slice] += mask
+
+        if self._blend_mode == BlendMode.MASK:
+            mask = get_mask(self._mask_type, tile.size, self._min_overlap)
+            mask = cast(
+                torch.FloatTensor,
+                mask.to(dtype=self._dtype, device=self._device),
+            )
+            self._value_buffer[tile_slice] += values * mask
+            self._weight_buffer[tile_slice] += mask
+
+        elif self._blend_mode == BlendMode.MAX:
+            use_max = self._weight_buffer[tile_slice] > 0.0
+            max_values = torch.maximum(self._value_buffer[tile_slice], values)
+            self._value_buffer[tile_slice] = torch.where(use_max, max_values, values)
+            self._weight_buffer[tile_slice] = 1.0
+
+        elif self._blend_mode == BlendMode.MIN:
+            use_min = self._weight_buffer[tile_slice] > 0.0
+            min_values = torch.minimum(self._value_buffer[tile_slice], values)
+            self._value_buffer[tile_slice] = torch.where(use_min, min_values, values)
+            self._weight_buffer[tile_slice] = 1.0
 
     def compute(self) -> torch.FloatTensor:
         """Compute final output image."""
