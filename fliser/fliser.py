@@ -1,11 +1,10 @@
-from typing import cast, Callable
 from collections.abc import Sequence, Iterator
-from types import EllipsisType
 from enum import Enum
-import operator
 import torch
+from torch import Tensor
 from fliser.dimensions import (
     Size2,
+    Tile,
     compute_tile_count,
     find_optimal_tile_size,
     find_optimal_aspect_ratio,
@@ -30,73 +29,6 @@ class BlendMode(str, Enum):
     MASK = "mask"
     MAX = "max"
     MIN = "min"
-
-
-class Tile:
-    size: Size2
-    offset: Size2
-
-    def __init__(self, size: Size2, offset: Size2):
-        self.size = (int(size[0]), int(size[1]))
-        self.offset = (int(offset[0]), int(offset[1]))
-
-    def slice(self) -> tuple[EllipsisType, slice, slice]:
-        """
-        Get tensor slice for tile.
-
-        Assumes sliced tensor has shape [..., H, W].
-
-        Examples
-        --------
-        ```python
-        x = torch.rand(2, 3, 768, 1024)
-        tile = Tile((128, 128), (32, 64))
-        y = x[tile.slice()]
-        print(y.shape)
-        # torch.size([2, 3, 128, 128])
-        ```
-        """
-        return (
-            ...,
-            slice(self.offset[0], self.offset[0] + self.size[0]),
-            slice(self.offset[1], self.offset[1] + self.size[1]),
-        )
-
-    def _apply_op(self, op: Callable[[int, int], int], o: int) -> "Tile":
-        new_size = (op(self.size[0], o), op(self.size[1], o))
-        new_offset = (op(self.offset[0], o), op(self.offset[1], o))
-        return Tile(new_size, new_offset)
-
-    def __floordiv__(self, o: int) -> "Tile":
-        """
-        Divide by integer (truncated).
-
-        Example
-        -------
-        ```python
-        tile = Tile((64, 64), (128, 256))
-        print(tile // 4)
-        # Tile(size=(16, 16), offset=(32, 64))
-        ```
-        """
-        return self._apply_op(operator.floordiv, o)
-
-    def __mul__(self, o: int) -> "Tile":
-        """
-        Multiply by integer.
-
-        Example
-        -------
-        ```python
-        tile = Tile((16, 16), (32, 64))
-        print(tile * 4)
-        # Tile(size=(64, 64), offset=(128, 256))
-        ```
-        """
-        return self._apply_op(operator.mul, o)
-
-    def __repr__(self) -> str:
-        return f"Tile(size={self.size}, offset={self.offset})"
 
 
 class TileIterator:
@@ -160,8 +92,8 @@ class Fliser:
     _device: torch.device
     _dtype: torch.dtype
 
-    _value_buffer: torch.FloatTensor
-    _weight_buffer: torch.FloatTensor
+    _value_buffer: Tensor
+    _weight_buffer: Tensor
 
     def __init__(
         self,
@@ -210,21 +142,15 @@ class Fliser:
             self._image_size, self._tile_size, self._min_overlap
         )
 
-        self._value_buffer = cast(
-            torch.FloatTensor,
-            torch.empty(
-                size=(self._num_channels,) + self._image_size,
-                dtype=self._dtype,
-                device=self._device,
-            )
+        self._value_buffer = torch.empty(
+            size=(self._num_channels,) + self._image_size,
+            dtype=self._dtype,
+            device=self._device,
         )
-        self._weight_buffer = cast(
-            torch.FloatTensor,
-            torch.empty(
-                size=(1,) + self._image_size,
-                dtype=self._dtype,
-                device=self._device,
-            )
+        self._weight_buffer = torch.empty(
+            size=(1,) + self._image_size,
+            dtype=self._dtype,
+            device=self._device,
         )
         self.reset()
 
@@ -345,7 +271,7 @@ class Fliser:
         _ = self._value_buffer.zero_()
         _ = self._weight_buffer.zero_()
 
-    def update(self, tile: Tile, values: torch.FloatTensor) -> None:
+    def update(self, tile: Tile, values: Tensor) -> None:
         """
         Update state with tile predictions.
 
@@ -363,12 +289,9 @@ class Fliser:
             if values.size(0) != 1:
                 raise ValueError("update() only supports batch size 1.")
 
-            values = cast(torch.FloatTensor, values.squeeze(0))
+            values = values.squeeze(0)
 
-        values = cast(
-            torch.FloatTensor,
-            values.to(dtype=self._dtype, device=self._device),
-        )
+        values = values.to(dtype=self._dtype, device=self._device)
 
         tile_height, tile_width = tile.size
         offset_y, offset_x = tile.offset
@@ -379,11 +302,8 @@ class Fliser:
         )
 
         if self._blend_mode == BlendMode.MASK:
-            mask = get_mask(self._mask_type, tile.size, self._min_overlap)
-            mask = cast(
-                torch.FloatTensor,
-                mask.to(dtype=self._dtype, device=self._device),
-            )
+            mask = get_mask(self._mask_type, tile, self._image_size, self._min_overlap)
+            mask = mask.to(dtype=self._dtype, device=self._device)
             self._value_buffer[tile_slice] += values * mask
             self._weight_buffer[tile_slice] += mask
 
@@ -399,10 +319,10 @@ class Fliser:
             self._value_buffer[tile_slice] = torch.where(use_min, min_values, values)
             self._weight_buffer[tile_slice] = 1.0
 
-    def compute(self) -> torch.FloatTensor:
+    def compute(self) -> Tensor:
         """Compute final output image."""
         output = self._value_buffer / self._weight_buffer
-        return cast(torch.FloatTensor, output)
+        return output
 
     def tiles(self) -> Iterator[Tile]:
         """

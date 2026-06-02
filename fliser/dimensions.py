@@ -1,10 +1,79 @@
-from typing import TypeAlias
+from typing import TypeAlias, Callable
 from collections.abc import Sequence
+from types import EllipsisType
+import operator
 import math
 
 
 Size2: TypeAlias = tuple[int, int]
 """2D size tuple."""
+
+
+class Tile:
+    size: Size2
+    offset: Size2
+
+    def __init__(self, size: Size2, offset: Size2):
+        self.size = (int(size[0]), int(size[1]))
+        self.offset = (int(offset[0]), int(offset[1]))
+
+    def slice(self) -> tuple[EllipsisType, slice, slice]:
+        """
+        Get tensor slice for tile.
+
+        Assumes sliced tensor has shape [..., H, W].
+
+        Examples
+        --------
+        ```python
+        x = torch.rand(2, 3, 768, 1024)
+        tile = Tile((128, 128), (32, 64))
+        y = x[tile.slice()]
+        print(y.shape)
+        # torch.size([2, 3, 128, 128])
+        ```
+        """
+        return (
+            ...,
+            slice(self.offset[0], self.offset[0] + self.size[0]),
+            slice(self.offset[1], self.offset[1] + self.size[1]),
+        )
+
+    def _apply_op(self, op: Callable[[int, int], int], o: int) -> "Tile":
+        new_size = (op(self.size[0], o), op(self.size[1], o))
+        new_offset = (op(self.offset[0], o), op(self.offset[1], o))
+        return Tile(new_size, new_offset)
+
+    def __floordiv__(self, o: int) -> "Tile":
+        """
+        Divide by integer (truncated).
+
+        Example
+        -------
+        ```python
+        tile = Tile((64, 64), (128, 256))
+        print(tile // 4)
+        # Tile(size=(16, 16), offset=(32, 64))
+        ```
+        """
+        return self._apply_op(operator.floordiv, o)
+
+    def __mul__(self, o: int) -> "Tile":
+        """
+        Multiply by integer.
+
+        Example
+        -------
+        ```python
+        tile = Tile((16, 16), (32, 64))
+        print(tile * 4)
+        # Tile(size=(64, 64), offset=(128, 256))
+        ```
+        """
+        return self._apply_op(operator.mul, o)
+
+    def __repr__(self) -> str:
+        return f"Tile(size={self.size}, offset={self.offset})"
 
 
 def compute_tile_count(
