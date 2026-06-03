@@ -32,5 +32,13 @@ build-backend = "setuptools.build_meta"
 module = ["torch.*"]
 ignore_missing_imports = true
 
-[basedpyright]
+[tool.basedpyright]
 typeCheckingMode = "standard"
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

@@ -70,9 +70,7 @@ class TileIterator:
 
         offset_x = 0
         if num_tiles_x > 1:
-            offset_x = round(
-                self._ix * (image_width - tile_width) / (num_tiles_x - 1)
-            )
+            offset_x = round(self._ix * (image_width - tile_width) / (num_tiles_x - 1))
 
         self._ix += 1
         if self._ix == num_tiles_x:

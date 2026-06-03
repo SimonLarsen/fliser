@@ -100,9 +100,7 @@ def compute_tile_count(
     """
     height, width = image_size
     tile_height, tile_width = tile_size
-    num_tiles_y = math.ceil(
-        (height - min_overlap) / (tile_height - min_overlap)
-    )
+    num_tiles_y = math.ceil((height - min_overlap) / (tile_height - min_overlap))
     num_tiles_x = math.ceil((width - min_overlap) / (tile_width - min_overlap))
     return num_tiles_y, num_tiles_x
 
@@ -126,9 +124,9 @@ def tile_size_from_aspect(
     """
     if divisor is None:
         divisor = 1
-    tile_width = round(
-        math.sqrt(aspect_ratio) * math.sqrt(num_pixels) / divisor
-    ) * divisor
+    tile_width = (
+        round(math.sqrt(aspect_ratio) * math.sqrt(num_pixels) / divisor) * divisor
+    )
     tile_height = round(tile_width / aspect_ratio / divisor) * divisor
     return tile_height, tile_width
 
@@ -168,11 +166,11 @@ def find_optimal_tile_size(
         tile_count = num_tiles_y * num_tiles_x
 
         if (
-            best_tile_count is None or
-            tile_count < best_tile_count or
-            (
-                tile_count == best_tile_count and
-                abs(best_ratio - 1.0) < abs(ratio - 1.0)
+            best_tile_count is None
+            or tile_count < best_tile_count
+            or (
+                tile_count == best_tile_count
+                and abs(best_ratio - 1.0) < abs(ratio - 1.0)
             )
         ):
             best_tile_count = tile_count
