@@ -1,9 +1,8 @@
-from typing import TypeAlias, Callable
-from collections.abc import Sequence
-from types import EllipsisType
-import operator
 import math
-
+import operator
+from collections.abc import Callable, Sequence
+from types import EllipsisType
+from typing import TypeAlias
 
 Size2: TypeAlias = tuple[int, int]
 """2D size tuple."""

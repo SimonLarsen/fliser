@@ -1,13 +1,15 @@
-from collections.abc import Sequence, Iterator
+from collections.abc import Iterator, Sequence
 from enum import Enum
+
 import torch
 from torch import Tensor
+
 from fliser.dimensions import (
     Size2,
     Tile,
     compute_tile_count,
-    find_optimal_tile_size,
     find_optimal_aspect_ratio,
+    find_optimal_tile_size,
 )
 from fliser.masks import MaskType, get_mask
 
@@ -163,7 +165,7 @@ class Fliser:
         divisor: int = 8,
         blend_mode: BlendMode = BlendMode.MASK,
         mask_type: MaskType = MaskType.LINEAR,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device | str = "cpu",
         dtype: torch.dtype = torch.float32,
     ) -> "Fliser":
         """
@@ -221,7 +223,7 @@ class Fliser:
         min_overlap: int = 64,
         blend_mode: BlendMode = BlendMode.MASK,
         mask_type: MaskType = MaskType.LINEAR,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device | str = "cpu",
         dtype: torch.dtype = torch.float32,
     ) -> "Fliser":
         """
@@ -300,10 +302,16 @@ class Fliser:
         )
 
         if self._blend_mode == BlendMode.MASK:
-            mask = get_mask(self._mask_type, tile, self._image_size, self._min_overlap)
-            mask = mask.to(dtype=self._dtype, device=self._device)
-            self._value_buffer[tile_slice] += values * mask
-            self._weight_buffer[tile_slice] += mask
+            mask = get_mask(
+                mask_type=self._mask_type,
+                tile=tile,
+                image_size=self._image_size,
+                overlap=self._min_overlap,
+                device=self._device,
+                dtype=self._dtype,
+            )
+            self._value_buffer[tile_slice].addcmul_(values, mask)
+            self._weight_buffer[tile_slice].add_(mask)
 
         elif self._blend_mode == BlendMode.MAX:
             use_max = self._weight_buffer[tile_slice] > 0.0
