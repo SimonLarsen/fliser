@@ -65,7 +65,7 @@ def _linear_mask(
     grad_y = (
         torch.linspace(
             1.0 / (overlap_y + 1),
-            tile_height / overlap_y,
+            tile_height / (overlap_y + 1),
             tile_height,
             device=device,
             dtype=dtype,
@@ -77,7 +77,7 @@ def _linear_mask(
     grad_x = (
         torch.linspace(
             1.0 / (overlap_x + 1),
-            tile_width / overlap_x,
+            tile_width / (overlap_x + 1),
             tile_width,
             device=device,
             dtype=dtype,
