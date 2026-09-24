@@ -28,6 +28,11 @@ version = {attr = "fliser.__version__"}
 requires = ["setuptools >= 80.9.0"]
 build-backend = "setuptools.build_meta"
 
+[dependency-groups]
+dev = [
+    "ruff>=0.16.8",
+]
+
 [[tool.mypy.overrides]]
 module = ["torch.*"]
 ignore_missing_imports = true
