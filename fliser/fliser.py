@@ -129,6 +129,9 @@ class Fliser:
             Torch dtype to store buffers in.
         """
 
+        if dtype == torch.bool and blend_mode == BlendMode.MASK:
+            raise ValueError("Mask blend mode not supported when dtype is torch.bool.")
+
         self._image_size = (image_size[0], image_size[1])
         self._num_channels = num_channels
         self._tile_size = (tile_size[0], tile_size[1])
@@ -147,9 +150,10 @@ class Fliser:
             dtype=self._dtype,
             device=self._device,
         )
+
         self._weight_buffer = torch.empty(
             size=(1,) + self._image_size,
-            dtype=self._dtype,
+            dtype=self._dtype if self._blend_mode == BlendMode.MASK else torch.bool,
             device=self._device,
         )
         self.reset()
@@ -268,8 +272,8 @@ class Fliser:
 
     def reset(self) -> None:
         """Reset internal buffers."""
-        _ = self._value_buffer.zero_()
-        _ = self._weight_buffer.zero_()
+        self._value_buffer.zero_()
+        self._weight_buffer.zero_()
 
     def update(self, tile: Tile, values: Tensor) -> None:
         """
@@ -313,22 +317,22 @@ class Fliser:
             self._value_buffer[tile_slice].addcmul_(values, mask)
             self._weight_buffer[tile_slice].add_(mask)
 
-        elif self._blend_mode == BlendMode.MAX:
-            use_max = self._weight_buffer[tile_slice] > 0.0
-            max_values = torch.maximum(self._value_buffer[tile_slice], values)
-            self._value_buffer[tile_slice] = torch.where(use_max, max_values, values)
-            self._weight_buffer[tile_slice] = 1.0
+        else:
+            if self._blend_mode == BlendMode.MAX:
+                keep_values = torch.maximum(self._value_buffer[tile_slice], values)
+            else:
+                keep_values = torch.minimum(self._value_buffer[tile_slice], values)
 
-        elif self._blend_mode == BlendMode.MIN:
-            use_min = self._weight_buffer[tile_slice] > 0.0
-            min_values = torch.minimum(self._value_buffer[tile_slice], values)
-            self._value_buffer[tile_slice] = torch.where(use_min, min_values, values)
-            self._weight_buffer[tile_slice] = 1.0
+            has_value = self._weight_buffer[tile_slice]
+            self._value_buffer[tile_slice] = torch.where(has_value, keep_values, values)
+            self._weight_buffer[tile_slice] = True
 
     def compute(self) -> Tensor:
         """Compute final output image."""
-        output = self._value_buffer / self._weight_buffer
-        return output
+        if self._blend_mode == BlendMode.MASK:
+            return self._value_buffer / self._weight_buffer
+        else:
+            return self._value_buffer
 
     def tiles(self) -> Iterator[Tile]:
         """

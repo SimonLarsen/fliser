@@ -53,7 +53,7 @@ Use `Fliser.from_aspect_ratios` to instead choose tile size from a set of aspect
 fliser = Fliser.from_aspect_ratios(
     image_size=(h, w),
     num_channels=c,
-    tile_num_pixels=512 ** 2,
+    tile_num_pixels=512**2,
     aspect_ratios=(0.5, 1.0, 2.0),
     min_overlap=32,
 )
