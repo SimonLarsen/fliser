@@ -1,4 +1,4 @@
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from fliser.fliser import BlendMode, Fliser
 from fliser.masks import MaskType
